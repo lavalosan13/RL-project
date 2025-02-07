@@ -1,0 +1,72 @@
+\documentclass[a4paper, 12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Apprentissage par Renforcement pour le Contrôle d'un Drone}
+\author{Inès Hafassa-Maïza, Hugo Laval}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+Ce rapport décrit l'utilisation de l'apprentissage par renforcement pour contrôler un drone dans un environnement 3D avec des obstacles. Le but est de permettre au drone de naviguer de manière autonome vers une destination tout en évitant les obstacles.
+
+\section{Formulation du Problème}
+Le problème est formulé comme un processus de décision markovien (MDP) défini par l'ensemble $(S, A, P, R, \gamma)$ où :
+\begin{itemize}
+    \item $S$ est l'ensemble des états, représentant la position, la vitesse et la batterie du drone.
+    \item $A$ est l'ensemble des actions, représentant les accélérations possibles du drone.
+    \item $P$ est la fonction de transition d'état, définissant la probabilité de passer d'un état à un autre après une action.
+    \item $R$ est la fonction de récompense, définissant la récompense reçue après chaque transition.
+    \item $\gamma$ est le facteur de discount, représentant l'importance des récompenses futures.
+\end{itemize}
+
+L'objectif est de trouver une politique $\pi(a|s)$ qui maximise la récompense cumulée attendue :
+\[
+G_t = \mathbb{E} \left[ \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} \mid S_t = s \right]
+\]
+
+\section{Modèle Actor-Critic}
+Le modèle Actor-Critic est utilisé pour résoudre ce problème. Il combine deux réseaux de neurones :
+\begin{itemize}
+    \item L'actor, qui propose des actions basées sur les états actuels.
+    \item Le critic, qui évalue la qualité des actions proposées en estimant la valeur des états.
+\end{itemize}
+
+\subsection{Fonctionnement}
+Le réseau Actor-Critic fonctionne en deux étapes :
+\begin{enumerate}
+    \item L'actor prend un état $s$ et propose une action $a$ en suivant une politique $\pi(a|s)$.
+    \item Le critic évalue cette action en calculant la valeur de l'état $V(s)$ et l'avantage $A(s, a)$.
+\end{enumerate}
+
+Les pertes pour l'actor et le critic sont définies comme suit :
+\[
+\text{Loss}_{\text{actor}} = -\log \pi(a|s) A(s, a)
+\]
+\[
+\text{Loss}_{\text{critic}} = \left( R + \gamma V(s') - V(s) \right)^2
+\]
+
+\section{Implémentation}
+Le fichier \texttt{app\_renf.py} contient les classes et fonctions suivantes :
+\begin{itemize}
+    \item \texttt{Environment} : Génère un environnement 3D avec des obstacles et une destination.
+    \item \texttt{Drone} : Représente le drone avec ses propriétés et comportements.
+    \item \texttt{DroneEnv} : Interface Gym pour l'apprentissage par renforcement.
+    \item \texttt{ActorCritic} : Modèle Actor-Critic pour l'apprentissage.
+    \item \texttt{train} : Fonction d'entraînement pour le modèle Actor-Critic.
+\end{itemize}
+
+\section{Résultats et Discussion}
+L'entraînement du modèle Actor-Critic permet au drone d'apprendre à naviguer vers la destination tout en évitant les obstacles. Les récompenses sont définies pour encourager le drone à se rapprocher de la destination et à éviter les collisions.
+
+\section{Conclusion}
+L'apprentissage par renforcement avec le modèle Actor-Critic est une approche efficace pour le contrôle autonome de drones dans des environnements complexes. Les résultats montrent que le drone peut apprendre à naviguer de manière optimale en maximisant les récompenses cumulées.
+
+\end{document}
