@@ -108,6 +108,7 @@ class DroneEnv(gym.Env):
 
         self.env = Environment()  # Génération du monde
         self.drone = Drone(self.env)  # Initialisation du drone
+        self.traj = []
         
         # Définition des espaces Gym
         self.action_space = spaces.Box(low=-1, high=1, shape=(3,), dtype=np.float32)
@@ -122,6 +123,10 @@ class DroneEnv(gym.Env):
         Effectue une action et met à jour l'état du drone.
         """
         self.drone.move(action)
+        #print('position is', self.drone.position)
+
+        self.traj.append(list(self.drone.position.copy()))
+        #print('traj is', self.traj)
         collision = self.drone.check_collision()
 
         # Calcul de la récompense
@@ -150,6 +155,44 @@ class DroneEnv(gym.Env):
         reward -= 5 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
 
         return reward
+    
+    def plot_trajectory(self):
+        """
+        Visualise la trajectoire du drone dans l'environnement.
+
+        Paramètres :
+        -----------
+        env : Environment
+            L'environnement contenant les obstacles et la destination.
+        trajectory : list
+            La liste des positions du drone à chaque étape.
+        """
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_xlim([0, self.env.size])
+        ax.set_ylim([0, self.env.size])
+        ax.set_zlim([0, self.env.size])
+
+        # Plot obstacles
+        if len(self.env.obstacles) > 0:
+            ax.scatter(self.env.obstacles[:, 0], self.env.obstacles[:, 1], self.env.obstacles[:, 2], c='r', marker='o', label='Obstacles')
+
+        # Plot destination
+        ax.scatter(self.env.destination[0], self.env.destination[1], self.env.destination[2], c='g', marker='x', label='Destination')
+
+        #Plot start point
+        start_point = self.traj[0]
+        ax.scatter(start_point[0], start_point[1], start_point[2], c='b', marker='^', label='Position Initiale du Drone')
+
+        # Plot trajectory
+        trajectory = np.array(self.traj)
+        ax.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c='b', label='Trajectory')
+
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.legend()
+        plt.show()
 
     def reset(self):
         """
