@@ -21,7 +21,7 @@ class Environment:
     """
     Environnement 3D pour l'apprentissage du drone avec obstacles.
     """
-    def __init__(self, size=10, p=0.1):
+    def __init__(self, size=10, p=0.001):
         self.size = size
         self.p = p
         self.obstacles = self.generate_obstacles()
@@ -198,7 +198,7 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
             
             action = torch.multinomial(action_probs, 1).item()
             new_state, reward, done, _ = env.step(action)
-            #print(action_probs)
+            print(action_probs)
             log_probs.append(torch.log(action_probs[0, action]).unsqueeze(0))  # Ensure log_probs are 1D tensors
             values.append(state_value)
             rewards.append(reward)
@@ -214,8 +214,8 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
         returns = torch.tensor(returns, dtype=torch.float32)  # Ensure returns are Float tensors
         values = torch.cat(values).squeeze()
         advantage = returns - values.detach()
-        #print(f'logprob is {log_probs}')
-        #print(f'advantage is {advantage}')
+        print(f'logprob is {log_probs}')
+        print(f'advantage is {advantage}')
 
         if log_probs:  # Ensure log_probs is not empty
             actor_loss = -(torch.cat(log_probs) * advantage).mean()
@@ -227,72 +227,12 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
             optimizer.step()
         else:
             print("Warning: log_probs is empty. Skipping loss calculation for this episode.")
-
-def plot_trajectory(env, trajectory):
-    """
-    Visualise la trajectoire du drone dans l'environnement.
-
-    Paramètres :
-    -----------
-    env : Environment
-        L'environnement contenant les obstacles et la destination.
-    trajectory : list
-        La liste des positions du drone à chaque étape.
-    """
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim([0, env.size])
-    ax.set_ylim([0, env.size])
-    ax.set_zlim([0, env.size])
-
-    # Plot obstacles
-    if len(env.obstacles) > 0:
-        ax.scatter(env.obstacles[:, 0], env.obstacles[:, 1], env.obstacles[:, 2], c='r', marker='o', label='Obstacles')
-
-    # Plot destination
-    ax.scatter(env.destination[0], env.destination[1], env.destination[2], c='g', marker='x', label='Destination')
-
-    #Plot start point
-    start_point = trajectory[0]
-    ax.scatter(start_point[0], start_point[1], start_point[2], c='b', marker='^', label='Position Initiale du Drone')
-
-    # Plot trajectory
-    trajectory = np.array(trajectory)
-    ax.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c='b', label='Trajectory')
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-    plt.show()
-
-def evaluate(droneEnv, model, episodes=10):
-    traj = []
-    for episode in range(episodes):
-        state = droneEnv.reset()
-        done = False
-        total_reward = 0
-
-        while not done:
-            state_tensor = torch.FloatTensor(state).unsqueeze(0)
-            action_probs, _ = model(state_tensor)
-            action = torch.multinomial(action_probs, 1).item()
-            state, reward, done, _ = env.step(action)
-            total_reward += reward
-            env.drone.position
-            traj.append(env.drone.position)
-        plot_trajectory(droneEnv.env,traj)
-
-        print(f"Episode {episode + 1}: Total Reward = {total_reward}")
-
 # ==============================
 # EXÉCUTION
 # ==============================
 env = DroneEnv()
 model = ActorCritic(input_dim=7, action_dim=3)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-train(env, model, optimizer, epochs=15)
+train(env, model, optimizer, epochs=1)
 
-# Evaluate the trained model
-evaluate(env, model, episodes=10)
-
+print(model)
