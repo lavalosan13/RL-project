@@ -296,7 +296,7 @@ def evaluate(droneEnv, model, episodes=10):
 droneEnv = DroneEnv()
 model = ActorCritic(input_dim=7, action_dim=3)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-train(droneEnv, model, optimizer, epochs=5)
+train(droneEnv, model, optimizer, epochs=3)
 
 # Evaluate the trained model
 evaluate(droneEnv, model, episodes=10)
