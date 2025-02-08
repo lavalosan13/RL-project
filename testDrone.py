@@ -87,7 +87,7 @@ class Drone:
         """
         Met à jour la position du drone selon l'action choisie.
         """
-        #self.acceleration = np.clip(action, -1, 1)  # Clip les accélérations entre [-1,1]
+        self.acceleration = np.clip(action, -1, 1)  # Clip les accélérations entre [-1,1]
         self.acceleration = action
         self.velocity += self.acceleration  # Mise à jour de la vitesse
         self.position += self.velocity  # Mise à jour de la position
@@ -213,7 +213,6 @@ class DroneEnv(gym.Env):
 DroneEnv = DroneEnv()
 
 #print(DroneEnv.drone.position[1])
-
 
 def action(size=5):
     Actions = []

@@ -87,6 +87,7 @@ class Drone:
         Met à jour la position du drone selon l'action choisie.
         """
         self.acceleration = np.clip(action, -1, 1)  # Clip les accélérations entre [-1,1]
+        self.acceleration = action
         self.velocity += self.acceleration  # Mise à jour de la vitesse
         self.position += self.velocity  # Mise à jour de la position
 
@@ -142,9 +143,9 @@ class DroneEnv(gym.Env):
         Fonction de récompense pour l'agent RL.
         """
         if np.array_equal(self.drone.position, self.env.destination):
-            return 1000  # Récompense élevée si la livraison est réussie
+            return 10000  # Récompense élevée si la livraison est réussie
         if collision:
-            return -500  # Pénalité forte en cas de collision
+            return -1000  # Pénalité forte en cas de collision
 
         # Encouragement à se rapprocher de la destination
         prev_distance = np.linalg.norm(self.drone.position - self.env.destination)
@@ -229,9 +230,9 @@ class ActorCritic(nn.Module):
 # ==============================
 # ENTRAÎNEMENT ACTOR-CRITIC
 # ==============================
-def train(env, model, optimizer, epochs=5000, gamma=0.99):
+def train(droneEnv, model, optimizer, epochs=5000, gamma=0.99):
     for episode in range(epochs):
-        state = env.reset()
+        state = droneEnv.reset()
         log_probs, values, rewards = [], [], []
         done = False
 
@@ -240,7 +241,7 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
             action_probs, state_value = model(state_tensor)
             
             action = torch.multinomial(action_probs, 1).item()
-            new_state, reward, done, _ = env.step(action)
+            new_state, reward, done, _ = droneEnv.step(action)
             #print(action_probs)
             log_probs.append(torch.log(action_probs[0, action]).unsqueeze(0))  # Ensure log_probs are 1D tensors
             values.append(state_value)
@@ -271,44 +272,6 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
         else:
             print("Warning: log_probs is empty. Skipping loss calculation for this episode.")
 
-def plot_trajectory(env, trajectory):
-    """
-    Visualise la trajectoire du drone dans l'environnement.
-
-    Paramètres :
-    -----------
-    env : Environment
-        L'environnement contenant les obstacles et la destination.
-    trajectory : list
-        La liste des positions du drone à chaque étape.
-    """
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim([0, env.size])
-    ax.set_ylim([0, env.size])
-    ax.set_zlim([0, env.size])
-
-    # Plot obstacles
-    if len(env.obstacles) > 0:
-        ax.scatter(env.obstacles[:, 0], env.obstacles[:, 1], env.obstacles[:, 2], c='r', marker='o', label='Obstacles')
-
-    # Plot destination
-    ax.scatter(env.destination[0], env.destination[1], env.destination[2], c='g', marker='x', label='Destination')
-
-    #Plot start point
-    start_point = trajectory[0]
-    ax.scatter(start_point[0], start_point[1], start_point[2], c='b', marker='^', label='Position Initiale du Drone')
-
-    # Plot trajectory
-    trajectory = np.array(trajectory)
-    ax.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c='b', label='Trajectory')
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.legend()
-    plt.show()
-
 def evaluate(droneEnv, model, episodes=10):
     traj = []
     for episode in range(episodes):
@@ -320,22 +283,21 @@ def evaluate(droneEnv, model, episodes=10):
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
             action_probs, _ = model(state_tensor)
             action = torch.multinomial(action_probs, 1).item()
-            state, reward, done, _ = env.step(action)
+            print()
+            state, reward, done, _ = droneEnv.step(action)
             total_reward += reward
-            env.drone.position
-            traj.append(env.drone.position)
-        plot_trajectory(droneEnv.env,traj)
+        droneEnv.plot_trajectory()
 
         print(f"Episode {episode + 1}: Total Reward = {total_reward}")
 
 # ==============================
 # EXÉCUTION
 # ==============================
-env = DroneEnv()
+droneEnv = DroneEnv()
 model = ActorCritic(input_dim=7, action_dim=3)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
-train(env, model, optimizer, epochs=15)
+train(droneEnv, model, optimizer, epochs=5)
 
 # Evaluate the trained model
-evaluate(env, model, episodes=10)
+evaluate(droneEnv, model, episodes=10)
 
