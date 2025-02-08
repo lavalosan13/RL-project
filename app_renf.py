@@ -1,12 +1,18 @@
 import numpy as np
 import gym
 from gym import spaces
+from gym.spaces import Box
+import warnings
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+
+# Suppress the Box bound precision warning
+warnings.filterwarnings("ignore", category=UserWarning, module="gym.spaces.box")
+
 
 # ==============================
 # CLASSE ENVIRONNEMENT (OBSTACLES & DESTINATION)
@@ -15,7 +21,7 @@ class Environment:
     """
     Environnement 3D pour l'apprentissage du drone avec obstacles.
     """
-    def __init__(self, size=100, p=0.10):
+    def __init__(self, size=100, p=0.001):
         self.size = size
         self.p = p
         self.obstacles = self.generate_obstacles()
@@ -53,20 +59,20 @@ class Environment:
         ax.legend()
         plt.show()
 
-
 env=Environment()
 env.render()
 # ==============================
 # CLASSE DRONE (DYNAMIQUE & ÉTATS)
 # ==============================
 class Drone:
-    def __init__(self):
+    def __init__(self,env):
         self.position = np.zeros(3, dtype=np.float32)  # Initialize position as float64
         self.velocity = np.zeros(3, dtype=np.float32)  # Initialize velocity as float64
         self.acceleration = np.zeros(3, dtype=np.float32)
         self.battery = 100.0
+        self.env = env
 
-    def reset(self):
+    def reset(self,env):
         """
         Réinitialise l'état du drone.
         """
@@ -74,6 +80,7 @@ class Drone:
         self.velocity = np.zeros(3)  # Vitesse initiale
         self.acceleration = np.zeros(3)  # Accélération initiale
         self.battery = 1000  # Batterie initiale
+        self.env = env
 
     def move(self, action):
         """
@@ -191,7 +198,7 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
             
             action = torch.multinomial(action_probs, 1).item()
             new_state, reward, done, _ = env.step(action)
-            
+            print(action_probs)
             log_probs.append(torch.log(action_probs[0, action]))
             values.append(state_value)
             rewards.append(reward)
@@ -207,17 +214,19 @@ def train(env, model, optimizer, epochs=5000, gamma=0.99):
         returns = torch.tensor(returns)
         values = torch.cat(values).squeeze()
         advantage = returns - values.detach()
+        print(f'logprob is {log_probs}')
+        print(f'advantage is {advantage}')
 
-        actor_loss = -(torch.cat(log_probs) * advantage).mean()
-        critic_loss = F.mse_loss(values, returns)
-        loss = actor_loss + critic_loss
+        if log_probs:  # Ensure log_probs is not empty
+            actor_loss = -(torch.cat(log_probs) * advantage).mean()
+            critic_loss = F.mse_loss(values, returns)
+            loss = actor_loss + critic_loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        if episode % 500 == 0:
-            print(f"Épisode {episode}, Perte: {loss.item():.4f}, Récompense Moyenne: {np.mean(rewards):.2f}")
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        else:
+            print("Warning: log_probs is empty. Skipping loss calculation for this episode.")
 
 # ==============================
 # EXÉCUTION
