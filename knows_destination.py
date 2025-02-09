@@ -492,7 +492,7 @@ class Environment:
                 return True
         return False
 
-    def render(self, trajectory):
+    def render(self, trajectory, reason):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
         ax.set_xlim([0, self.size])
@@ -522,6 +522,10 @@ class Environment:
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
         ax.legend()
+
+        # Add reason for stopping
+        plt.title(f"Reason for stopping: {reason}")
+
         plt.show()
 
 # ==============================
@@ -532,7 +536,7 @@ class Drone:
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
         self.acceleration = np.zeros(3, dtype=np.float32)
-        self.battery = 100.0
+        self.battery = 1000.0
         self.env = env
 
     def reset(self, env):
@@ -543,7 +547,7 @@ class Drone:
                 break
         self.velocity = np.zeros(3)
         self.acceleration = np.zeros(3)
-        self.battery = 100.0
+        self.battery = 1000.0
         self.env = env
 
     def move(self, action):
@@ -555,7 +559,7 @@ class Drone:
 
         action = np.clip(action, -1, 1) * 0.1  # Réduire l'amplitude des actions
         self.acceleration = action
-        self.velocity += self.acceleration * 0.9
+        self.velocity += self.acceleration * 0.1
         new_position = self.position + self.velocity
 
         # Check if the new position is within the boundaries of the cube
@@ -573,7 +577,7 @@ class Drone:
         direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
         return direction
     
-    def detect_obstacles(self, direction, radius=3):
+    def detect_obstacles(self, direction, radius=4):
         """
         Detect obstacles within a specified radius along the direction vector.
         Return the positions of detected obstacles.
@@ -593,7 +597,7 @@ class Drone:
                 return True
         return False
 
-    def detect_obstacles_at_point(self, point, radius=0.5):
+    def detect_obstacles_at_point(self, point, radius=3):
         """
         Detect obstacles at a specific point within a specified radius.
         """
@@ -872,6 +876,7 @@ def test(env, model, max_steps=1000):
     done = False
     steps = 0
     trajectory = []
+    reason=""
 
     while not done and steps < max_steps:
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
@@ -884,7 +889,14 @@ def test(env, model, max_steps=1000):
         steps += 1
         trajectory.append(env.drone.position.copy())  # Enregistrer la position actuelle du drone
 
-    return total_reward, trajectory
+        if done:
+            if np.array_equal(env.drone.position, env.env.destination):
+                reason = "Destination atteinte"
+            elif env.drone.battery <= 0:
+                reason = "Batterie épuisée"
+            else:
+                reason = "Obstacle rencontré"
+    return total_reward, trajectory, reason
 
 # ==============================
 # EXÉCUTION
@@ -893,11 +905,11 @@ env = DroneEnv()
 model = ActorCritic(input_dim=10, action_dim=3)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 env.model = model  # Assign the model to the environment
-train(env, model, optimizer, epochs=100)
+train(env, model, optimizer, epochs=10)
 
 # Test du modèle entraîné
-total_reward, trajectory = test(env, model)
+total_reward, trajectory, reason = test(env, model)
 print(f"Récompense totale obtenue pendant le test : {total_reward}")
 
 # Visualiser la trajectoire du drone
-env.env.render(trajectory)
+env.env.render(trajectory, reason)
