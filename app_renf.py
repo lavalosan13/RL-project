@@ -72,32 +72,37 @@ class Drone:
         self.battery = 100.0
         self.env = env
 
-    def reset(self,env):
+    def reset(self, env):
         """
         Réinitialise l'état du drone.
         """
-        self.position = np.array([10, 10, 10])  # Position de départ
+        self.position = np.random.uniform(0, self.env.size, size=3)  # Random initial position
         self.velocity = np.zeros(3)  # Vitesse initiale
         self.acceleration = np.zeros(3)  # Accélération initiale
-        self.battery = 1000  # Batterie initiale
+        self.battery = 10000  # Batterie initiale
         self.env = env
 
     def move(self, action):
-        """
-        Met à jour la position du drone selon l'action choisie.
-        """
-        self.acceleration = np.clip(action, -1, 1)  # Clip les accélérations entre [-1,1]
-        self.acceleration = action
-        self.velocity += self.acceleration  # Mise à jour de la vitesse
-        self.position += self.velocity  # Mise à jour de la position
+        # Ensure action is a 1D array with shape (3,)
+        action = np.squeeze(action)  # Remove extra dimensions
+        self.acceleration = np.clip(action, -1, 1)  # Clip accelerations between [-1, 1]
+        self.velocity += self.acceleration  # Update velocity
+        self.position += self.velocity  # Update position
 
-        # Consommation d'énergie (proportionnelle à l'accélération)
+        # Clamp the position to stay within the environment boundaries
+        self.position = np.clip(self.position, 0, self.env.size)
+
+        # Energy consumption (proportional to acceleration)
         self.battery -= np.sqrt(np.sum(np.abs(self.acceleration)))
 
     def check_collision(self):
-        """
-        Vérifie si le drone a percuté un obstacle.
-        """
+        #if np.array_equal(self.position, self.env.destination):
+            #return False
+        #regarder si le drone est dans les limites de l'environnement    
+        for coord in self.position:
+            if coord <0 or coord>self.env.size :
+                return True
+        #regarder si le drone est dans un obstacle
         return any(np.array_equal(self.position, obs) for obs in self.env.obstacles)
 
 # ==============================
@@ -121,52 +126,48 @@ class DroneEnv(gym.Env):
 
     def step(self, action):
         """
-        Effectue une action et met à jour l'état du drone.
+        Perform an action and update the drone's state.
         """
+        # Ensure action is a NumPy array
+        if isinstance(action, torch.Tensor):
+            action = action.detach().numpy()
+        
         self.drone.move(action)
-        #print('position is', self.drone.position)
-
         self.traj.append(list(self.drone.position.copy()))
-        #print('traj is', self.traj)
         collision = self.drone.check_collision()
 
-        # Calcul de la récompense
+        # Calculate reward
         reward = self.compute_reward(collision)
 
-        # Vérification de fin d'épisode
+        # Check if the episode is done
         done = collision or self.drone.battery <= 0 or np.array_equal(self.drone.position, self.env.destination)
 
         return self._get_obs(), reward, done, {}
 
     def compute_reward(self, collision):
-        """
-        Fonction de récompense pour l'agent RL.
-        """
         if np.array_equal(self.drone.position, self.env.destination):
-            return 10000  # Récompense élevée si la livraison est réussie
+            return 10000  # Large reward for reaching the destination
         if collision:
-            return -1000  # Pénalité forte en cas de collision
+            return -1000  # Penalty for collision
 
-        # Encouragement à se rapprocher de la destination
-        prev_distance = np.linalg.norm(self.drone.position - self.env.destination)
-        new_distance = np.linalg.norm(self.drone.position + self.drone.velocity - self.env.destination)
-        reward = 10 * (prev_distance - new_distance)
+        # Reward for moving closer to the destination
+        distance = np.linalg.norm(self.drone.position - self.env.destination)
+        reward = 100 * (1 / (distance + 1))  # Inverse distance reward
 
-        # Pénalité énergétique
-        reward -= 5 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
+        # Penalty for being near obstacles
+        for obs in self.env.obstacles:
+            obs_distance = np.linalg.norm(self.drone.position - obs)
+            if obs_distance < 1.0:  # Penalize if too close to an obstacle
+                reward -= 10
+
+        # Small penalty for energy consumption
+        reward -= 0.1 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
 
         return reward
-    
+        
     def plot_trajectory(self):
         """
         Visualise la trajectoire du drone dans l'environnement.
-
-        Paramètres :
-        -----------
-        env : Environment
-            L'environnement contenant les obstacles et la destination.
-        trajectory : list
-            La liste des positions du drone à chaque étape.
         """
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -181,13 +182,15 @@ class DroneEnv(gym.Env):
         # Plot destination
         ax.scatter(self.env.destination[0], self.env.destination[1], self.env.destination[2], c='g', marker='x', label='Destination')
 
-        #Plot start point
-        start_point = self.traj[0]
-        ax.scatter(start_point[0], start_point[1], start_point[2], c='b', marker='^', label='Position Initiale du Drone')
+        # Plot start point
+        if len(self.traj) > 0:
+            start_point = self.traj[0]
+            ax.scatter(start_point[0], start_point[1], start_point[2], c='b', marker='^', label='Position Initiale du Drone')
 
         # Plot trajectory
-        trajectory = np.array(self.traj)
-        ax.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c='b', label='Trajectory')
+        if len(self.traj) > 0:
+            trajectory = np.array(self.traj)
+            ax.plot(trajectory[:, 0], trajectory[:, 1], trajectory[:, 2], c='b', label='Trajectory')
 
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -201,6 +204,7 @@ class DroneEnv(gym.Env):
         """
         self.env = Environment()  # Nouveau monde
         self.drone = Drone(self.env)  # Nouveau drone
+        self.traj = []
         return self._get_obs()
 
     def _get_obs(self):
@@ -217,16 +221,17 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
         self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 128)
-        self.actor = nn.Linear(128, action_dim)
+        self.actor_mean = nn.Linear(128, action_dim)
+        self.actor_logstd = nn.Parameter(torch.zeros(1, action_dim))
         self.critic = nn.Linear(128, 1)
     
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
-        action_probs = F.softmax(self.actor(x), dim=-1)
+        action_mean = self.actor_mean(x)
+        action_logstd = self.actor_logstd.expand_as(action_mean)
         state_value = self.critic(x)
-        return action_probs, state_value
-
+        return action_mean, action_logstd, state_value
 # ==============================
 # ENTRAÎNEMENT ACTOR-CRITIC
 # ==============================
@@ -238,31 +243,38 @@ def train(droneEnv, model, optimizer, epochs=5000, gamma=0.99):
 
         while not done:
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
-            action_probs, state_value = model(state_tensor)
+            action_mean, action_logstd, state_value = model(state_tensor)
             
-            action = torch.multinomial(action_probs, 1).item()
-            new_state, reward, done, _ = droneEnv.step(action)
-            #print(action_probs)
-            log_probs.append(torch.log(action_probs[0, action]).unsqueeze(0))  # Ensure log_probs are 1D tensors
+            action_std = torch.exp(action_logstd)
+            dist = torch.distributions.Normal(action_mean, action_std)
+            action = dist.sample()
+            
+            # Add exploration noise
+            exploration_noise = torch.randn_like(action) * 0.1
+            action = action + exploration_noise
+            
+            log_prob = dist.log_prob(action).sum(-1)
+            
+            new_state, reward, done, _ = droneEnv.step(action.detach().numpy())
+            
+            log_probs.append(log_prob)
             values.append(state_value)
             rewards.append(reward)
             
             state = new_state
 
-        # Calcul des pertes Actor-Critic
+        # Calculate returns and advantages
         returns, G = [], 0
         for r in reversed(rewards):
             G = r + gamma * G
             returns.insert(0, G)
 
-        returns = torch.tensor(returns, dtype=torch.float32)  # Ensure returns are Float tensors
+        returns = torch.tensor(returns, dtype=torch.float32)
         values = torch.cat(values).squeeze()
         advantage = returns - values.detach()
-        #print(f'logprob is {log_probs}')
-        #print(f'advantage is {advantage}')
 
-        if log_probs:  # Ensure log_probs is not empty
-            actor_loss = -(torch.cat(log_probs) * advantage).mean()
+        if log_probs:
+            actor_loss = -(torch.stack(log_probs) * advantage).mean()
             critic_loss = F.mse_loss(values, returns)
             loss = actor_loss + critic_loss
 
@@ -273,7 +285,6 @@ def train(droneEnv, model, optimizer, epochs=5000, gamma=0.99):
             print("Warning: log_probs is empty. Skipping loss calculation for this episode.")
 
 def evaluate(droneEnv, model, episodes=10):
-    traj = []
     for episode in range(episodes):
         state = droneEnv.reset()
         done = False
@@ -281,13 +292,19 @@ def evaluate(droneEnv, model, episodes=10):
 
         while not done:
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
-            action_probs, _ = model(state_tensor)
-            action = torch.multinomial(action_probs, 1).item()
-            print()
-            state, reward, done, _ = droneEnv.step(action)
+            action_mean, action_logstd, _ = model(state_tensor)
+            
+            # Sample an action from the Gaussian distribution
+            action_std = torch.exp(action_logstd)
+            dist = torch.distributions.Normal(action_mean, action_std)
+            action = dist.sample()
+            
+            # Convert action to a NumPy array and pass it to the environment
+            state, reward, done, _ = droneEnv.step(action.detach().numpy())
             total_reward += reward
-        droneEnv.plot_trajectory()
 
+        # Plot the trajectory after each episode
+        droneEnv.plot_trajectory()
         print(f"Episode {episode + 1}: Total Reward = {total_reward}")
 
 # ==============================
@@ -295,9 +312,9 @@ def evaluate(droneEnv, model, episodes=10):
 # ==============================
 droneEnv = DroneEnv()
 model = ActorCritic(input_dim=7, action_dim=3)
-optimizer = optim.Adam(model.parameters(), lr=0.001)
-train(droneEnv, model, optimizer, epochs=3)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
+train(droneEnv, model, optimizer, epochs=50)
 
 # Evaluate the trained model
-evaluate(droneEnv, model, episodes=10)
+evaluate(droneEnv, model, episodes=6)
 
