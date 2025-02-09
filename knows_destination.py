@@ -557,9 +557,9 @@ class Drone:
         if np.array_equal(self.position, self.env.destination):
             return  # Stop moving if the destination is reached
 
-        action = np.clip(action, -1, 1) * 0.1  # Réduire l'amplitude des actions
+        action = np.clip(action, -1, 1) * 0.03  # Réduire l'amplitude des actions
         self.acceleration = action
-        self.velocity += self.acceleration * 0.1
+        self.velocity += self.acceleration * 0.001
         new_position = self.position + self.velocity
 
         # Check if the new position is within the boundaries of the cube
@@ -577,7 +577,7 @@ class Drone:
         direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
         return direction
     
-    def detect_obstacles(self, direction, radius=4):
+    def detect_obstacles(self, direction, radius=10):
         """
         Detect obstacles within a specified radius along the direction vector.
         Return the positions of detected obstacles.
@@ -597,7 +597,7 @@ class Drone:
                 return True
         return False
 
-    def detect_obstacles_at_point(self, point, radius=3):
+    def detect_obstacles_at_point(self, point, radius=10):
         """
         Detect obstacles at a specific point within a specified radius.
         """
@@ -660,11 +660,11 @@ class DroneEnv(gym.Env):
 
         prev_distance = np.linalg.norm(self.drone.position - self.env.destination)
         new_distance = np.linalg.norm(self.drone.position + self.drone.velocity - self.env.destination)
-        reward = 1000 * (prev_distance - new_distance)
+        reward = 10000 * (prev_distance - new_distance)
 
         # Pénalité énergétique et pour les grandes vitesses
-        #reward -= 5 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
-        #reward -= 2 * np.linalg.norm(self.drone.velocity)  # Pénalité pour les grandes vitesses
+        reward -= 50 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
+        reward -= 20 * np.linalg.norm(self.drone.velocity)  # Pénalité pour les grandes vitesses
 
         return reward
 
@@ -790,7 +790,7 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
             
             # Calculate direction and check for obstacles
             direction = env.drone.calculate_direction()
-            if not env.drone.detect_obstacles(direction, radius=0.5):
+            if not env.drone.detect_obstacles(direction, radius=5):
                 action = direction  # Move towards the destination
             else:
                 action = action_means.detach().numpy().flatten()  # Use Actor-Critic model to avoid obstacles
@@ -851,7 +851,7 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
 # ==============================
 # TEST DU MODÈLE ENTRAÎNÉ
 # ==============================
-def test(env, model, max_steps=1000):
+def test(env, model, max_steps=10000):
     """
     Teste le modèle Actor-Critic dans un nouvel environnement et enregistre la trajectoire.
 
@@ -879,6 +879,7 @@ def test(env, model, max_steps=1000):
     reason=""
 
     while not done and steps < max_steps:
+    #while not done or steps < max_steps:
         state_tensor = torch.FloatTensor(state).unsqueeze(0)
         action_means, _ = model(state_tensor)
         action = action_means.detach().numpy().flatten()
@@ -907,9 +908,16 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 env.model = model  # Assign the model to the environment
 train(env, model, optimizer, epochs=10)
 
-# Test du modèle entraîné
-total_reward, trajectory, reason = test(env, model)
-print(f"Récompense totale obtenue pendant le test : {total_reward}")
+# Test du modèle entraîné sur 5 environnements différents
+total_rewards = []
+for i in range(5):
+    env_test = DroneEnv()
+    total_reward, trajectory, reason = test(env_test, model)
+    total_rewards.append(total_reward)
+    print(f"Environnement {i+1} - Récompense totale obtenue pendant le test : {total_reward}")
+    # Visualiser la trajectoire du drone
+    env_test.env.render(trajectory, reason)
 
-# Visualiser la trajectoire du drone
-env.env.render(trajectory, reason)
+# Afficher la récompense moyenne sur les 5 environnements
+average_reward = np.mean(total_rewards)
+print(f"Récompense moyenne sur les 5 environnements : {average_reward}")
