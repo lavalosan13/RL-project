@@ -528,13 +528,12 @@ class Environment:
 # CLASSE DRONE (DYNAMIQUE & ÉTATS)
 # ==============================
 class Drone:
-    def __init__(self, env, detection_radius=3):
+    def __init__(self, env):
         self.position = np.zeros(3, dtype=np.float32)
         self.velocity = np.zeros(3, dtype=np.float32)
         self.acceleration = np.zeros(3, dtype=np.float32)
         self.battery = 100.0
         self.env = env
-        self.detection_radius = detection_radius  # Detection radius variable
 
     def reset(self, env):
         while True:
@@ -574,14 +573,14 @@ class Drone:
         direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
         return direction
     
-    def detect_obstacles(self, direction):
+    def detect_obstacles(self, direction, radius=3):
         """
-        Detect obstacles within the detection radius along the direction vector.
+        Detect obstacles within a specified radius along the direction vector.
         Return the positions of detected obstacles.
         """
         detected_obstacles = []
         for obs_center, obs_radius in self.env.obstacles:
-            if np.linalg.norm(self.position + direction - obs_center) <= self.detection_radius + obs_radius:
+            if np.linalg.norm(self.position + direction - obs_center) <= radius + obs_radius:
                 detected_obstacles.append(obs_center)
         return detected_obstacles
 
@@ -607,11 +606,11 @@ class Drone:
 # ENVIRONNEMENT GYM (INTERFACE POUR RL)
 # ==============================
 class DroneEnv(gym.Env):
-    def __init__(self, detection_radius=3):
+    def __init__(self):
         super(DroneEnv, self).__init__()
 
         self.env = Environment()
-        self.drone = Drone(self.env, detection_radius=detection_radius)
+        self.drone = Drone(self.env)
 
         # Définition des espaces Gym
         self.action_space = spaces.Box(low=-1, high=1, shape=(3,), dtype=np.float32)
@@ -621,10 +620,24 @@ class DroneEnv(gym.Env):
             dtype=np.float32
         )
 
+    # def step(self, action=None):
+    #     #direction = self.drone.calculate_direction()  # Calculate direction towards the destination
+    #     if action is None:
+    #         direction = self.drone.calculate_direction()  # Calculate direction towards the destination
+    #         if not self.drone.detect_obstacles(direction, radius=0.5):
+    #             action = direction  # Move towards the destination
+    #         else:
+    #             action = self.actor_critic_action()  # Use Actor-Critic model to avoid obstacles
+
+    #     self.drone.move(action)
+    #     done = np.array_equal(self.drone.position, self.env.destination) or self.drone.battery <= 0
+
+    #     reward = self.compute_reward(done)
+    #     return self._get_obs(), reward, done, {}
     def step(self, action=None):
+        direction = self.drone.calculate_direction()  # Calculate direction towards the destination
         if action is None:
-            direction = self.drone.calculate_direction()  # Calculate direction towards the destination
-            if not self.drone.detect_obstacles(direction):
+            if not self.drone.detect_obstacles(direction, radius=1):
                 action = direction  # Move towards the destination
             else:
                 action = self.actor_critic_action()  # Use Actor-Critic model to avoid obstacles
@@ -639,15 +652,15 @@ class DroneEnv(gym.Env):
         if done and np.array_equal(self.drone.position, self.env.destination):
             return 100000
         elif done:
-            return -5000
+            return -50000
 
         prev_distance = np.linalg.norm(self.drone.position - self.env.destination)
         new_distance = np.linalg.norm(self.drone.position + self.drone.velocity - self.env.destination)
         reward = 1000 * (prev_distance - new_distance)
 
         # Pénalité énergétique et pour les grandes vitesses
-        reward -= 5 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
-        reward -= 2 * np.linalg.norm(self.drone.velocity)  # Pénalité pour les grandes vitesses
+        #reward -= 5 * np.sqrt(np.sum(np.abs(self.drone.acceleration)))
+        #reward -= 2 * np.linalg.norm(self.drone.velocity)  # Pénalité pour les grandes vitesses
 
         return reward
 
@@ -773,12 +786,13 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
             
             # Calculate direction and check for obstacles
             direction = env.drone.calculate_direction()
-            if not env.drone.detect_obstacles(direction):
+            if not env.drone.detect_obstacles(direction, radius=0.5):
                 action = direction  # Move towards the destination
             else:
                 action = action_means.detach().numpy().flatten()  # Use Actor-Critic model to avoid obstacles
 
-            new_state, reward, done, _ = env.step(action)
+            #new_state, reward, done, _ = env.step(action)
+            new_state, reward, done, _ = env.step()
             print(f"Action choisie : {action}")
             log_prob = torch.log(action_means + 1e-10)  # Add small value to avoid log(0)
             log_probs.append(log_prob)
@@ -864,7 +878,8 @@ def test(env, model, max_steps=1000):
         action_means, _ = model(state_tensor)
         action = action_means.detach().numpy().flatten()
         print(f"Action choisie : {action}")
-        state, reward, done, _ = env.step(action)
+        #state, reward, done, _ = env.step(action)
+        state, reward, done, _ = env.step()
         total_reward += reward
         steps += 1
         trajectory.append(env.drone.position.copy())  # Enregistrer la position actuelle du drone
@@ -874,7 +889,7 @@ def test(env, model, max_steps=1000):
 # ==============================
 # EXÉCUTION
 # ==============================
-env = DroneEnv(detection_radius=0.1)  # Set the detection radius here
+env = DroneEnv()
 model = ActorCritic(input_dim=10, action_dim=3)
 optimizer = optim.Adam(model.parameters(), lr=0.001)
 env.model = model  # Assign the model to the environment
