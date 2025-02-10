@@ -18,9 +18,10 @@ radius = 2
 Obstacle = [(center, radius)]
 Destination = (9,5,5)
 
+
 class EnvironmentManuel:
     """
-    Environnement 3D pour l'apprentissage du drone avec obstacles.
+    Environnement 3D défini manuellement pour l'apprentissage du drone avec obstacles.
     """
     def __init__(self, size=10, obstacle=Obstacle, destination=Destination):
         self.size = size
@@ -58,19 +59,6 @@ class EnvironmentManuel:
             y = center[1] + radius * np.sin(u) * np.sin(v)
             z = center[2] + radius * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.5)
-
-        # # Add green triangle if the drone reaches its destination
-        # if reason == "Destination atteinte":
-        #     # Define the vertices of the triangle
-        #     vertices = np.array([
-        #         [trajectory[-1][0], trajectory[-1][1], trajectory[-1][2]],
-        #         [trajectory[-1][0] + eps, trajectory[-1][1], trajectory[-1][2]],
-        #         [trajectory[-1][0], trajectory[-1][1] + eps, trajectory[-1][2]]
-        #     ])
-        #     # Define the faces of the triangle
-        #     faces = [[0, 1, 2]]
-        #     # Plot the triangle
-        #     ax.add_collection3d(Poly3DCollection([vertices], color='g', alpha=0.5, label='Zone de détection'))
 
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
@@ -141,19 +129,6 @@ class Environment:
             z = center[2] + radius * np.cos(v)
             ax.plot_wireframe(x, y, z, color="r", alpha=0.5)
 
-        # # Add green triangle if the drone reaches its destination
-        # if reason == "Destination atteinte":
-        #     # Define the vertices of the triangle
-        #     vertices = np.array([
-        #         [trajectory[-1][0], trajectory[-1][1], trajectory[-1][2]],
-        #         [trajectory[-1][0] + eps, trajectory[-1][1], trajectory[-1][2]],
-        #         [trajectory[-1][0], trajectory[-1][1] + eps, trajectory[-1][2]]
-        #     ])
-        #     # Define the faces of the triangle
-        #     faces = [[0, 1, 2]]
-        #     # Plot the triangle
-        #     ax.add_collection3d(Poly3DCollection([vertices], color='g', alpha=0.5, label='Zone de détection'))
-
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
@@ -165,6 +140,8 @@ class Environment:
         plt.show()
 
 Environnement = EnvironmentManuel()
+#Environnement = Environment()
+
 
 # ==============================
 # CLASSE DRONE (DYNAMIQUE & ÉTATS)
@@ -407,6 +384,16 @@ class ActorCritic(nn.Module):
         action_means = torch.tanh(self.actor(x))  # Tanh to keep actions in [-1, 1]
         state_value = self.critic(x)
         return action_means, state_value
+    
+class MetricsLogger:
+    def __init__(self):
+        self.avg_rewards = []
+        self.successes = []
+        self.collisions = []
+        self.battery_depletions = []
+        self.critic_losses = []
+
+metrics = MetricsLogger()
 
 # ==============================
 # ENTRAÎNEMENT ACTOR-CRITIC
@@ -440,8 +427,11 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
     
     for episode in range(epochs):
         state = env.reset()
-        log_probs, values, rewards = [], [], []
+        episode_reward = 0
+        steps = 0
+        min_distance = float('inf')
         done = False
+        log_probs, values, rewards = [], [], []
 
         while not done:
             state_tensor = torch.FloatTensor(state).unsqueeze(0)
@@ -455,13 +445,32 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
                 action = action_means.detach().numpy().flatten()  # Use Actor-Critic model to avoid obstacles
 
             new_state, reward, done, _ = env.step(action)
-            #print(f"Action choisie : {action}")
+            steps += 1
+
+            # Track minimum distance to destination
+            current_distance = np.linalg.norm(env.drone.position - env.env.destination)
+            if current_distance < min_distance:
+                min_distance = current_distance
+
+                # Log termination reasons
+            if done:
+                if np.linalg.norm(env.drone.position - env.env.destination) <= env.drone.eps:
+                    metrics.successes.append(1)
+                elif env.check_collision():
+                    metrics.collisions.append(1)
+                else:
+                    metrics.battery_depletions.append(1)
+
+
             log_prob = torch.log(action_means + 1e-10)  # Add small value to avoid log(0)
             log_probs.append(log_prob)
             values.append(state_value)
             rewards.append(reward)
             
             state = new_state
+
+        #metrics
+        metrics.avg_rewards.append(np.mean(rewards)) 
 
         # Calcul des pertes Actor-Critic
         returns, G = [], 0
@@ -488,6 +497,9 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
             critic_loss = F.mse_loss(values, returns)  # Calculer la perte du critique
             loss = actor_loss + critic_loss  # Calculer la perte totale
 
+            # Log losses 
+            metrics.critic_losses.append(critic_loss.item())
+
             optimizer.zero_grad()  # Réinitialiser les gradients
             loss.backward()  # Calculer les gradients
             optimizer.step()  # Mettre à jour les poids
@@ -509,55 +521,84 @@ def train(env, model, optimizer, epochs=1, gamma=0.99, reward_threshold=900, win
 # ==============================
 # TEST DU MODÈLE ENTRAÎNÉ
 # ==============================
-def test(env, model, max_steps=100000):
-    """
-    Teste le modèle Actor-Critic dans un nouvel environnement et enregistre la trajectoire.
 
-    Paramètres :
-    -----------
-    env : gym.Env
-        L'environnement Gym dans lequel le modèle sera testé.
-    model : nn.Module
-        Le modèle Actor-Critic à tester.
-    max_steps : int, optionnel (par défaut=1000)
-        Le nombre maximum de pas de temps pour le test.
+def plot_metrics(metrics):
+    plt.figure(figsize=(15, 10))
 
-    Retourne :
-    ---------
-    total_reward : float
-        La récompense totale obtenue pendant le test.
-    trajectory : list
-        La liste des positions du drone à chaque étape.
-    """
-    state = env.reset()
-    total_reward = 0
-    done = False
-    steps = 0
-    trajectory = []
-    reason = ""
+    # Plot Episode Rewards
+    plt.subplot(3, 2, 1)
+    plt.plot(metrics.avg_rewards, label='Episode Average')
+    plt.xlabel('Episodes')
+    plt.ylabel('Reward')
+    plt.legend()
 
-    while not done and steps < max_steps:
-        state_tensor = torch.FloatTensor(state).unsqueeze(0)
-        action_means, _ = model(state_tensor)
-        action = action_means.detach().numpy().flatten()
-        print(f"Action choisie : {action}")
-#        state, reward, done, _ = env.step(action)
-        state, reward, done, _ = env.step()
-        total_reward += reward
-        steps += 1
-        trajectory.append(env.drone.position.copy())  # Enregistrer la position actuelle du drone
+    # Plot Success/Collision Rates
+    plt.subplot(3, 2, 2)
+    plt.plot(np.cumsum(metrics.successes) / np.arange(1, len(metrics.successes)+1), label='Success Rate')
+    plt.plot(np.cumsum(metrics.collisions) / np.arange(1, len(metrics.collisions)+1), label='Collision Rate')
+    plt.plot(np.cumsum(metrics.battery_depletions) / np.arange(1, len(metrics.battery_depletions)+1), label='Battery Depletion Rate')
+    plt.xlabel('Episodes')
+    plt.ylabel('Rate')
+    plt.legend()
 
-        if done:
-            if np.linalg.norm(env.drone.position - env.env.destination) <= env.drone.eps:
-                reason = "Destination atteinte"
-            elif env.drone.battery <= 0:
-                reason = "Batterie épuisée"
-            else:
-                reason = "Obstacle rencontré"
-        else:
-            reason = "Sortie de l'espace d'étude"
+    # Plot Losses
+    plt.subplot(3, 2, 5)
+    plt.plot(metrics.critic_losses, label='Critic Loss')
+    plt.xlabel('Episodes')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def evaluate_model(env_test, model, max_steps = 100000 ,num_episodes=10):
+    success_rate = []
+    collision_rate = []
+    battery_depletion_rate = []
+    avg_steps = []
     
-    return total_reward, trajectory, reason
+    for episode in range(num_episodes):
+        state = env.reset()
+        total_reward = 0
+        done = False
+        steps = 0
+        trajectory = []
+        reason = ""
+
+        while not done and steps < max_steps:
+            state_tensor = torch.FloatTensor(state).unsqueeze(0)
+            action_means, _ = model(state_tensor)
+            action = action_means.detach().numpy().flatten()
+            print(f"Action choisie : {action}")
+    #        state, reward, done, _ = env.step(action)
+            state, reward, done, _ = env.step()
+            total_reward += reward
+            steps += 1
+            trajectory.append(env.drone.position.copy())  # Enregistrer la position actuelle du drone
+
+
+            # Log termination reasons
+            if done:
+                if np.linalg.norm(env.drone.position - env.env.destination) <= env.drone.eps:
+                    success_rate.append(1)
+                    reason = "Destination atteinte"
+                elif env.check_collision():
+                    collision_rate.append(1)
+                    reason = "Obstacle rencontré ou sortie de l'espace d'étude"
+                else:
+                    battery_depletion_rate.append(1)
+                    reason = "Batterie épuisée"
+            avg_steps.append(steps)
+
+        env_test.env.render(trajectory, reason, eps=env_test.drone.eps)
+        plt.savefig(f'trajectory_episode_{episode}.png')
+        plt.close()
+
+
+    print(f"Success Rate: {np.mean(success_rate) * 100:.2f}%")
+    print(f"Collision Rate: {np.mean(collision_rate) * 100:.2f}%")
+    print(f"Battery Depletion Rate: {np.mean(battery_depletion_rate) * 100:.2f}%")
+    print(f"Average Steps: {np.mean(avg_steps)}")
 
 # ==============================
 # EXÉCUTION
@@ -568,17 +609,15 @@ optimizer = optim.Adam(model.parameters(), lr=0.0003)  # Lower learning rate
 env.model = model  # Assign the model to the environment
 train(env, model, optimizer, epochs=50)
 
+
 # Test du modèle entraîné sur 5 environnements différents
 total_rewards = []
-for i in range(10):
-    env_test = DroneEnv(Environnement)
-    env_test.model = model  # Assign the model to the test environment
-    total_reward, trajectory, reason = test(env_test, model)
-    total_rewards.append(total_reward)
-    print(f"Récompense totale obtenue pendant le test {i+1} : {total_reward}")
-    # Visualiser la trajectoire du drone
-    env_test.env.render(trajectory, reason, eps=env_test.drone.eps)
+env_test = DroneEnv(Environnement)
+env_test.model = model  # Assign the model to the test environment
 
-# Afficher la récompense moyenne sur les 5 environnements
-average_reward = np.mean(total_rewards)
-print(f"Récompense moyenne sur les 5 tests : {average_reward}")
+# Plot metrics
+plot_metrics(metrics)
+
+# Evaluate the trained model
+evaluate_model(env, model, num_episodes=5)
+
