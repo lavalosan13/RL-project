@@ -16,6 +16,18 @@
 
 \maketitle
 
+
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{ml_class_sketch.jpg}
+    \caption{Hardik Patel}
+\end{figure}
+\newpage
+\tableofcontents
+\newpage
+
+
 \section{Introduction}
 Ce rapport décrit l'utilisation de l'apprentissage par renforcement pour contrôler un drone dans un environnement 3D avec des obstacles. Le but est de permettre au drone de naviguer de manière autonome vers une destination tout en évitant les obstacles.
 
@@ -229,7 +241,7 @@ Cette approche a conduit à des comportements très efficaces lorsque la cible e
 \end{figure}
 \section{Modification de l'objectif}
 
-Pour améliorer les performances du drone dans l'évitement d'obstacles, nous avons décidé de l'entrainer spécifiquement à cette tâche. Désormais le drone évolue dans le même environement avec la même position de départ et la même cible pour chaque épisode de l'entrainement. Nous nous assurons qu'il y ai toujours un obstacle sur la route directe en direction de la cible pour obliger le drone à l'éviter. Cela améliore la capacité d'évitement comme on peut le constater sur la figure 4.
+Pour améliorer les performances du drone dans l'évitement d'obstacles, nous avons décidé de l'entraîner spécifiquement à cette tâche. Désormais, le drone évolue dans le même environnement avec la même position de départ et la même cible pour chaque épisode de l'entraînement. Nous nous assurons qu'il y ait toujours un obstacle sur la route directe en direction de la cible pour obliger le drone à l'éviter. Cela améliore la capacité d'évitement comme on peut le constater sur la figure 4.
 \begin{table}[H]
     \centering
     \begin{tabular}{|c|c|}
@@ -242,7 +254,7 @@ Pour améliorer les performances du drone dans l'évitement d'obstacles, nous av
         Taille des pas & 0.2 \\
         \hline
     \end{tabular}
-    \caption{Paramètres d'entraînement spécifique à l'évitement d'obstacles}
+    \caption{Paramètres d'entraînement spécifiques à l'évitement d'obstacles}
     \label{tab:training-parameters}
 \end{table}
 \begin{figure}[H]
@@ -258,4 +270,32 @@ Pour améliorer les performances du drone dans l'évitement d'obstacles, nous av
     \end{minipage}
     \caption{Trajectoire avec obstacles sur la trajectoire et entraînement spécifique}
 \end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{metrics.png}
+    \caption{Quelques métriques d'évaluation}
+\end{figure}
+
+\section{Conclusion}
+
+En conclusion, l'apprentissage par renforcement avec le modèle Actor-Critic s'est révélé être une approche efficace pour le contrôle autonome de drones dans des environnements complexes. En entraînant le drone à naviguer vers une cible tout en évitant les obstacles, nous avons pu observer une amélioration significative de ses capacités de navigation et d'évitement. Les résultats montrent que le drone peut apprendre à optimiser sa trajectoire et à gérer efficacement les obstacles grâce à l'entraînement spécifique. Cette méthode offre une solution prometteuse pour des applications futures dans des environnements réels où la navigation autonome est essentielle.
+
+En guise d'amélioration, nous aurions pu essayer d'entraîner le modèle sur des obstacles non convexes, ce qui complexifie la minimisation de la fonction objectif. Nous pourrions aussi essayer d'éviter des obstacles qui sont eux-mêmes en mouvement, comme pour simuler des oiseaux ou d'autres agents dans le ciel. Nous avons pris beaucoup de plaisir à réaliser ce projet et regrettons de ne pas avoir eu plus de temps pour l'améliorer.
+
+\section{Références}
+
+\begin{thebibliography}{9}
+
+\bibitem{geeksforgeeks}
+GeeksforGeeks, \textit{Actor-Critic Algorithm in Reinforcement Learning}, [Online]. Available: \url{https://www.geeksforgeeks.org/actor-critic-algorithm-in-reinforcement-learning/}. [Accessed: 10-Feb-2025].
+
+\bibitem{PrivatMoyal2024}
+Y. Privat and P. Moyal, \textit{Cours d'apprentissage par renforcement}, M2 IMSD, Mines Nancy/Université de Lorraine, 2024.
+
+\bibitem{wikipedia2024}
+\textit{Algorithme acteur-critique}, Wikipédia, l'encyclopédie libre, 7 décembre 2024. [Online]. Available: \url{http://fr.wikipedia.org/w/index.php?title=Algorithme_acteur-critique&oldid=220950270}. [Accessed: 7-Dec-2024].
+
+\end{thebibliography}
+
 \end{document}
