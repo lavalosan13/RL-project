@@ -4,6 +4,7 @@
 \usepackage{amsfonts}
 \usepackage{graphicx}
 \usepackage{hyperref}
+\usepackage{float}
 %\usepackage{tikz}
 %\usetikzlibrary{positioning}
 
@@ -184,28 +185,43 @@ Ces méthodes permettent au drone de naviguer de manière autonome dans l’envi
 Dans un premier temps, nous avons entraîné le drone en le plaçant dans un environnement généré aléatoirement, où il doit atteindre une cible également générée de manière aléatoire. Ce processus est répété un grand nombre de fois, correspondant au nombre d'époques d'entraînement. À chaque fois que le drone réussit ou échoue, l'environnement est réinitialisé de manière aléatoire.
 
 Cette approche a conduit à des comportements très efficaces lorsque la cible est visible en ligne droite, comme illustré à la figure 2. Cependant, l'algorithme s'avère moins performant lorsqu'il s'agit d'esquiver des obstacles. Le drone parvient à s'éloigner de l'obstacle, mais il semble incapable de retrouver la direction de la cible une fois qu'il a modifié sa trajectoire pour éviter l'obstacle (voir figure 3).
-\begin{figure}[h]
+\begin{table}[H]
     \centering
-    \begin{minipage}{0.45\textwidth}
+    \begin{tabular}{|c|c|}
+        \hline
+        \textbf{Paramètre} & \textbf{Valeur} \\
+        \hline
+        Nombre d'époques & 10 \\
+        Rayon de détection & 2 \\
+        $\epsilon$ & 0.5 \\
+        Taille des pas & 0.2 \\
+        \hline
+    \end{tabular}
+    \caption{Paramètres d'entraînement du drone}
+    \label{tab:training-parameters}
+\end{table}
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figure_7.png}
     \end{minipage}
     \hfill
-    \begin{minipage}{0.45\textwidth}
+    \begin{minipage}{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figure_8.png}
     \end{minipage}
     \caption{Trajectoire du drone vers la cible avec obstacles sur la trajectoire}
 \end{figure}
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \begin{minipage}{0.45\textwidth}
+    \begin{minipage}{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figure_9.png}
     \end{minipage}
     \hfill
-    \begin{minipage}{0.45\textwidth}
+    \begin{minipage}{0.49\textwidth}
         \centering
         \includegraphics[width=\textwidth]{Figure_10.png}
     \end{minipage}
@@ -213,10 +229,33 @@ Cette approche a conduit à des comportements très efficaces lorsque la cible e
 \end{figure}
 \section{Modification de l'objectif}
 
-Pour améliorer les performances du drone dans l'évitement d'obstacles, nous avons décidé de nous pencher sur une autre technique d'apprentissage. Désormais le drone évolue dans le même environement avec la même position de départ et la même cible pour chaque épisode de l'entrainement. Nous nous assurons qu'il y ai toujours un obstacle sur la route directe en direction de la cible pour obliger le drone à l'éviter. Cela améliore la capacité d'évitement comme on peut le constater sur la figure 4.
-\begin{figure}[h]
+Pour améliorer les performances du drone dans l'évitement d'obstacles, nous avons décidé de l'entrainer spécifiquement à cette tâche. Désormais le drone évolue dans le même environement avec la même position de départ et la même cible pour chaque épisode de l'entrainement. Nous nous assurons qu'il y ai toujours un obstacle sur la route directe en direction de la cible pour obliger le drone à l'éviter. Cela améliore la capacité d'évitement comme on peut le constater sur la figure 4.
+\begin{table}[H]
     \centering
-    \includegraphics[width=\textwidth]{att.D1KL_7bUX90t0ksXRxzEPxHcgLQs8o7jh7mdn5SYMgo.png}
-    \caption{Trajectoire du drone vers la cible avec obstacles sur la trajectoire et entrainement spécifique}
+    \begin{tabular}{|c|c|}
+        \hline
+        \textbf{Paramètre} & \textbf{Valeur} \\
+        \hline
+        Nombre d'époques & 10 \\
+        Rayon de détection & 2 \\
+        $\epsilon$ & 0.5 \\
+        Taille des pas & 0.2 \\
+        \hline
+    \end{tabular}
+    \caption{Paramètres d'entraînement spécifique à l'évitement d'obstacles}
+    \label{tab:training-parameters}
+\end{table}
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{att.D1KL_7bUX90t0ksXRxzEPxHcgLQs8o7jh7mdn5SYMgo.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.49\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{traj_evite.png}
+    \end{minipage}
+    \caption{Trajectoire avec obstacles sur la trajectoire et entraînement spécifique}
 \end{figure}
 \end{document}
