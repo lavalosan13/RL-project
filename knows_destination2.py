@@ -460,6 +460,8 @@ def test(env, model, max_steps=10000):
                 reason = "Batterie épuisée"
             else:
                 reason = "Obstacle rencontré"
+        else:
+            reason = "Sortie de l'espace d'étude"
     
     return total_reward, trajectory, reason
 
