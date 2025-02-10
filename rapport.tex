@@ -18,36 +18,19 @@
 \section{Introduction}
 Ce rapport décrit l'utilisation de l'apprentissage par renforcement pour contrôler un drone dans un environnement 3D avec des obstacles. Le but est de permettre au drone de naviguer de manière autonome vers une destination tout en évitant les obstacles.
 
-\section{Modélisation}
-Nous avons choisi la modélisation suivante pour le problème. Notre drone évolue dans un cube de côté 10. Dans ce cube, se trouvent des obstacles sphériques de taille variable. Nous générons une position initiale et une destination, toutes deux de manière aléatoire selon une loi uniforme et nous nous assurons que ni le point de départ, ni la destination ne se trouvent à l'intérieur d'un obstacle.
+\section{Mise en place de l’environnement}
 
-Notre drone est modélisé par une sphère de volume $\epsilon$, si bien que si la position du drone (matérialisée par son centre) atteint la destination à moins de $\epsilon$ près, c'est-à-dire si la norme L2 pour cette distance est inférieure à $\epsilon$, alors on considère que le drone a livré son colis avec succès. De même, si le drone passe à moins de $\epsilon$ d'un obstacle, il échoue.
+Nous avons défini un environnement tridimensionnel dans lequel évolue notre drone. Cet environnement est représenté par un cube de côté 10 contenant des obstacles sphériques de tailles variables, générés aléatoirement.
 
-Afin de détecter les obstacles, le drone possède des radars omnidirectionnels lui permettant de détecter des obstacles dans un rayon de 10 unités pour la norme L2 de $\mathbb{R}^3$. Le drone peut progresser en faisant des pas de distance fixe. À chaque étape, le drone calcule la direction pour atteindre la cible en ligne droite et recherche la présence d'obstacles dans cette direction (dans la limite de son rayon de détection). Si un obstacle est détecté, notre drone choisira sa nouvelle trajectoire en utilisant un algorithme d'apprentissage par renforcement appelé Actor-Critic que nous allons détailler.
+Afin de simuler des conditions réalistes, la position initiale du drone et sa destination sont sélectionnées de manière aléatoire selon une distribution uniforme. Nous nous assurons que ces points ne se situent pas à l’intérieur d’un obstacle afin de garantir des trajectoires réalisables.
 
-\subsection{Génération des Obstacles}
-Les obstacles dans l'environnement sont générés de manière aléatoire en suivant des lois de probabilités spécifiques :
-\begin{itemize}
-    \item \textbf{Nombre d'obstacles} : Le nombre d'obstacles est tiré aléatoirement selon une loi uniforme discrète entre 0 et 10.
-    \item \textbf{Position des obstacles} : Les centres des obstacles sont générés selon une loi uniforme continue dans le cube de côté 10. Chaque coordonnée $(x, y, z)$ du centre est tirée indépendamment selon une loi uniforme $U(0, 10)$.
-    \item \textbf{Rayon des obstacles} : Les rayons des obstacles sont tirés selon une loi uniforme continue entre 0.5 et 2.5 (soit $\frac{10}{4}$).
-\end{itemize}
+Le drone est modélisé par une sphère de volume $\epsilon$. On considère qu’il a atteint sa destination avec succès si la distance euclidienne entre son centre et le point d’arrivée est inférieure à $\epsilon$. Inversement, si cette distance devient inférieure à $\epsilon$ par rapport à un obstacle, la mission est considérée comme un échec.
 
-La génération des obstacles est implémentée comme suit :
-\begin{verbatim}
-def generate_obstacles(self):
-    obstacles = []
-    num_obstacles = np.random.randint(0, 10)
-    for _ in range(num_obstacles):
-        # Random position for the center of the sphere
-        center = np.random.uniform(0, self.size, size=3)
-        # Random radius for the sphere
-        radius = np.random.uniform(0.5, self.size / 4)
-        obstacles.append((center, radius))
-    return obstacles
-\end{verbatim}
+Pour naviguer en toute sécurité, le drone est équipé de radars omnidirectionnels lui permettant de détecter les obstacles dans un rayon de 10 unités selon la norme L2 dans $\mathbb{R}^3$. Il avance par pas de distance fixe et ajuste sa trajectoire en fonction des obstacles détectés. Par défaut, il se dirige en ligne droite vers sa cible mais, en présence d’un obstacle dans son champ de détection, il adapte sa trajectoire grâce à un algorithme d’apprentissage par renforcement de type Actor-Critic, détaillé ultérieurement.
 
-Cette méthode assure que les obstacles sont distribués de manière aléatoire dans l'espace de l'environnement, créant ainsi des scénarios variés pour l'apprentissage du drone.
+L’environnement est structuré selon des règles spécifiques pour la génération des obstacles. Le nombre d’obstacles est tiré aléatoirement selon une loi uniforme discrète entre 0 et 10. Les centres des obstacles sont générés aléatoirement dans le cube, chaque coordonnée $(x, y, z)$ suivant une loi uniforme $U(0, 10)$. Les rayons des obstacles sont déterminés aléatoirement selon une loi uniforme continue entre 0.5 et 2.5.
+
+Ce processus garantit une distribution aléatoire des obstacles et permet de générer des scénarios diversifiés pour entraîner le drone à naviguer efficacement dans des environnements dynamiques et imprévisibles.
 
 \section{Formulation du Problème}
 Le problème est formulé comme un processus de décision markovien (MDP) défini par l'ensemble $(S, A, P, R, \gamma)$ où :
@@ -64,40 +47,32 @@ L'objectif est de trouver une politique $\pi(a|s)$ qui maximise la récompense c
 G_t = \mathbb{E} \left[ \sum_{k=0}^{\infty} \gamma^k R_{t+k+1} \mid S_t = s \right]
 \]
 
-\section{Modélisation de la Fonction de Récompense et de l'Environnement}
+\section{Fonction de Récompense}
 La fonction de récompense est un élément crucial dans l'apprentissage par renforcement, car elle guide l'agent (le drone) vers un comportement optimal. Dans notre implémentation, la fonction de récompense est conçue pour encourager le drone à atteindre sa destination tout en évitant les obstacles. Si le drone atteint sa destination, une récompense élevée de 1000 est attribuée. En revanche, une pénalité sévère de -500 est appliquée en cas de collision avec un obstacle. De plus, pour chaque mouvement, une récompense proportionnelle à la réduction de la distance par rapport à la destination est calculée, incitant le drone à se rapprocher de son objectif. Une pénalité énergétique est également appliquée pour chaque action, proportionnelle à la racine de l'accélération utilisée, afin de simuler la consommation de la batterie.
-
-L'environnement est modélisé comme un cube tridimensionnel de taille fixe (10 unités de côté), rempli d'obstacles générés aléatoirement. La destination est également générée aléatoirement à chaque initialisation de l'environnement. Le drone perçoit son environnement à travers ses états internes, qui incluent sa position, sa vitesse et son niveau de batterie. Ces informations sont encapsulées dans un vecteur d'observation qui est utilisé par le modèle Actor-Critic pour prendre des décisions. Les obstacles sont perçus indirectement par le drone lorsqu'il vérifie les collisions après chaque mouvement. Cette modélisation permet de simuler un environnement réaliste et dynamique pour l'apprentissage du drone.
 
 Les variables d'état du drone sont modélisées comme suit :
 \begin{itemize}
-    \item $(X)_t, (Y)_t, (Z)_t \in [0, 10]$ représentent les coordonnées de la position du drone à l'instant $t$.
-    \item $(Vx)_t, (Vy)_t, (Vz)_t \in \mathbb{R}$ représentent les composantes de la vitesse du drone à l'instant $t$.
-    \item $(B)_t \in [0, 10000]$ représente le niveau de batterie du drone à l'instant $t$.
+    \item $X_t=(x_t, y_t, z_t) \in [0, 10]$ représentent les coordonnées de la position du drone à l'instant $t$.
+    \item $(Vx_t, Vy_t, Vz_t) \in \mathbb{R}$ représentent les composantes de la vitesse du drone à l'instant $t$.
+    \item $B_t \in [0, 10000]$ représente le niveau de batterie du drone à l'instant $t$.
 \end{itemize}
 
 Nous définissons également :
 \begin{itemize}
-    \item $\mathbf{X}_{\text{cible}}$ : le point de livraison.
     \item $\mathcal{O}$ : l'ensemble des obstacles.
+    \item $X_{d}=(x_d,y_d,z_d) \in [0,10] \setminus O$ : le point de livraison.
+   
 \end{itemize}
 
 La fonction de coût $C_t$ à minimiser est définie comme suit :
 \[
 C_t = -R_t = 
--1000 \cdot \mathbf{1}_{\{\mathbf{X}_t = \mathbf{X}_{\text{cible}}\}} + 500 \cdot \mathbf{1}_{\{\mathbf{X}_t \in \mathcal{O}\}} + 1000 \cdot \mathbf{1}_{\{(B)_t = 0\}} - \alpha \left\| \mathbf{X}_{t+1} - \mathbf{X}_t \right\|_2 + \beta \left\| \mathbf{A}_t \right\|_2
+-1000 \cdot \mathbf{1}_{\{X_t = X_d\}} + 500 \cdot \mathbf{1}_{\{X_t \in \mathcal{O}\}} + 1000 \cdot \mathbf{1}_{\{B_t = 0\}} - \alpha \left\| X_{t+1} - X_t \right\|_2 + \beta \left\| A_t \right\|_2
 \]
-où $\alpha$ et $\beta$ sont des coefficients de pondération pour la distance parcourue et la consommation d'énergie, respectivement, $\mathbf{X}_t = (X_t, Y_t, Z_t)$ représente la position du drone à l'instant $t$, et $\mathbf{A}_t = (Ax_t, Ay_t, Az_t)$ représente les composantes de l'accélération appliquée au drone à l'instant $t$.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.8\textwidth]{Figure_1.png}
-    \caption{Représentation de l'environnement 3D avec les obstacles et la destination.}
-    \label{fig:environment}
-\end{figure}
-
+où $\alpha$ et $\beta$ sont des coefficients de pondération pour la distance parcourue et la consommation d'énergie, respectivement, et $A_t = (Ax_t, Ay_t, Az_t)$ représente les composantes de l'accélération appliquée au drone à l'instant $t$.
+\newpage
 \section{Modèle Actor-Critic}
-Le modèle Actor-Critic est utilisé pour résoudre ce problème. Il combine deux réseaux de neurones :
+Lorsque le drone est incapable d'aller vers sa destination en ligne droite car un obstacle se trouve sur sa route, le modèle Actor-Critic est alors utilisé. Il combine deux réseaux de neurones :
 \begin{itemize}
     \item L'actor, qui propose des actions basées sur les états actuels.
     \item Le critic, qui évalue la qualité des actions proposées en estimant la valeur des états.
@@ -109,6 +84,12 @@ Le réseau Actor-Critic fonctionne en deux étapes :
     \item L'actor prend un état $s$ et propose une action $a$ en suivant une politique $\pi(a|s)$.
     \item Le critic évalue cette action en calculant la valeur de l'état $V(s)$ et l'avantage $A(s, a)$.
 \end{enumerate}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.5\textwidth]{actor_cnn.png}
+    \caption{Architecture du réseau de neuronnes pour l'Actor}
+    \label{fig:actor-critic}
+\end{figure}
 
 \subsection{Fonction Objectif}
 L'objectif de l'algorithme Actor-Critic est une combinaison du gradient de politique (pour l'actor) et de la fonction de valeur (pour le critic). La fonction objectif globale est généralement exprimée comme la somme de deux composants :
@@ -132,7 +113,7 @@ A(s, a) = Q(s, a) - V(s)
 \]
 où $Q(s, a)$ est la valeur de l'action et $V(s)$ est la valeur de l'état.
 
-\section{Avantages de l'Algorithme Actor-Critic}
+\subsection{Avantages de l'Algorithme Actor-Critic}
 L'algorithme Actor-Critic offre plusieurs avantages :
 \begin{itemize}
     \item \textbf{Efficacité de l'Échantillon Améliorée} : La nature hybride des algorithmes Actor-Critic conduit souvent à une meilleure efficacité de l'échantillon, nécessitant moins d'interactions avec l'environnement pour atteindre des performances optimales.
@@ -142,21 +123,100 @@ L'algorithme Actor-Critic offre plusieurs avantages :
 \end{itemize}
 
 \section{Implémentation}
-Le fichier \texttt{knows\_destination2.py} contient les classes et fonctions suivantes :
+
+Pour implémenter la simulation du déplacement du drone dans un environnement 3D, nous avons défini plusieurs classes et fonctions dans le fichier \texttt{knows\_destination2.py}. Parmi celles-ci, les méthodes \texttt{move} et \texttt{step} jouent un rôle essentiel dans la gestion du mouvement du drone et son interaction avec l’environnement.
+
+\subsection{Déplacement du Drone}
+
+Le déplacement du drone est assuré par deux méthodes principales :
 \begin{itemize}
-    \item \texttt{Environment} : Génère un environnement 3D avec des obstacles et une destination.
-    \item \texttt{Drone} : Représente le drone avec ses propriétés et comportements.
-    \item \texttt{DroneEnv} : Interface Gym pour l'apprentissage par renforcement.
-    \item \texttt{ActorCritic} : Modèle Actor-Critic pour l'apprentissage.
-    \item \texttt{train} : Fonction d'entraînement pour le modèle Actor-Critic.
-    \item \texttt{test} : Fonction de test pour évaluer le modèle entraîné.
+    \item \texttt{move} : mise à jour de la position du drone en fonction de l’action choisie.
+    \item \texttt{step} : gestion de l’interaction du drone avec son environnement.
 \end{itemize}
 
-\section{Résultats et Discussion}
-L'entraînement du modèle Actor-Critic permet au drone d'apprendre à naviguer vers la destination tout en évitant les obstacles. Les récompenses sont définies pour encourager le drone à se rapprocher de la destination et à éviter les collisions.
-A COMPLETER
-\section{Conclusion}
-L'apprentissage par renforcement avec le modèle Actor-Critic est une approche efficace pour le contrôle autonome de drones dans des environnements complexes. Les résultats montrent que le drone peut apprendre à naviguer de manière optimale en maximisant les récompenses cumulées.
-A COMPLETER
+\subsubsection{Méthode \texttt{move}}
 
+La méthode \texttt{move} prend en entrée :
+\begin{itemize}
+    \item \texttt{action} : un vecteur représentant l’accélération appliquée au drone.
+\end{itemize}
+
+Elle exécute les opérations suivantes :
+\begin{enumerate}
+    \item \textbf{Vérification de l’arrivée} : si le drone est à une distance inférieure ou égale à $\epsilon$ de la destination, il cesse tout déplacement puisqu'il est arrivé.
+    %\item \textbf{Limitation et normalisation de l’action} : l’action est contrainte à l’intervalle $[-1,1]$ pour éviter des valeurs extrêmes et est ensuite normalisée à une norme de 1.
+    \item \textbf{Mise à jour de l’accélération et de la vitesse} : l’accélération du drone est mise à jour en fonction de l’action reçue, puis la vitesse est ajustée.
+    \item \textbf{Calcul de la nouvelle position} : la nouvelle position est obtenue en ajoutant la vitesse actuelle à la position précédente.
+    \item \textbf{Vérification des limites} : si la nouvelle position se trouve à l’intérieur des frontières du cube de simulation dans aucun obstacle, elle est validée.
+    \item \textbf{Consommation d’énergie} : la batterie du drone est réduite en fonction de l’accélération appliquée.
+\end{enumerate}
+
+\subsubsection{Méthode \texttt{step}}
+
+La méthode \texttt{step} prend en entrée :
+\begin{itemize}
+    \item \texttt{action} : un vecteur d’accélération choisi par le drone ou calculé par l’algorithme Actor-Critic.
+\end{itemize}
+
+Elle suit les étapes suivantes :
+\begin{enumerate}
+    \item \textbf{Calcul de la direction idéale} : le vecteur directionnel optimal vers la destination est déterminé.
+    \item \textbf{Gestion des obstacles} : si aucun obstacle n’est détecté dans cette direction, le drone suit ce chemin ; sinon, l’algorithme Actor-Critic génère une nouvelle action pour éviter l’obstacle.
+    \item \textbf{Mise à jour de la position} : la méthode \texttt{move} est appelée pour appliquer l’action et modifier la position du drone.
+    \item \textbf{Vérification des conditions d’arrêt} : l’épisode se termine si :
+    \begin{itemize}
+        \item le drone atteint la destination,
+        \item le drone heurte un obstacle,
+        \item la batterie est épuisée.
+    \end{itemize}
+    \item \textbf{Calcul de la récompense} : la récompense est attribuée en fonction de plusieurs critères :
+    \begin{itemize}
+        \item la distance parcourue vers la cible,
+        \item l’évitement des obstacles,
+        \item l’efficacité énergétique.
+    \end{itemize}
+    \item \textbf{Retour des informations} : la méthode retourne l’état actuel du drone, la récompense obtenue, un indicateur de fin d’épisode et des informations complémentaires.
+\end{enumerate}
+
+Ces méthodes permettent au drone de naviguer de manière autonome dans l’environnement 3D en optimisant sa trajectoire et en évitant les obstacles grâce à l’apprentissage par renforcement.
+
+\subsection{Entraînement}
+Dans un premier temps, nous avons entraîné le drone en le plaçant dans un environnement généré aléatoirement, où il doit atteindre une cible également générée de manière aléatoire. Ce processus est répété un grand nombre de fois, correspondant au nombre d'époques d'entraînement. À chaque fois que le drone réussit ou échoue, l'environnement est réinitialisé de manière aléatoire.
+
+Cette approche a conduit à des comportements très efficaces lorsque la cible est visible en ligne droite, comme illustré à la figure 2. Cependant, l'algorithme s'avère moins performant lorsqu'il s'agit d'esquiver des obstacles. Le drone parvient à s'éloigner de l'obstacle, mais il semble incapable de retrouver la direction de la cible une fois qu'il a modifié sa trajectoire pour éviter l'obstacle (voir figure 3).
+\begin{figure}[h]
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_7.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_8.png}
+    \end{minipage}
+    \caption{Trajectoire du drone vers la cible avec obstacles sur la trajectoire}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_9.png}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.45\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_10.png}
+    \end{minipage}
+    \caption{Trajectoire du drone vers la cible avec obstacles sur la trajectoire}
+\end{figure}
+\section{Modification de l'objectif}
+
+Pour améliorer les performances du drone dans l'évitement d'obstacles, nous avons décidé de nous pencher sur une autre technique d'apprentissage. Désormais le drone évolue dans le même environement avec la même position de départ et la même cible pour chaque épisode de l'entrainement. Nous nous assurons qu'il y ai toujours un obstacle sur la route directe en direction de la cible pour obliger le drone à l'éviter. Cela améliore la capacité d'évitement comme on peut le constater sur la figure 4.
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{att.D1KL_7bUX90t0ksXRxzEPxHcgLQs8o7jh7mdn5SYMgo.png}
+    \caption{Trajectoire du drone vers la cible avec obstacles sur la trajectoire et entrainement spécifique}
+\end{figure}
 \end{document}
